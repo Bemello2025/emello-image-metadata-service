@@ -1,5 +1,5 @@
-flask
-pillow
-piexif
-gunicorn
+flask==3.0.3
+gunicorn==21.2.0
+pillow==10.3.0
+piexif==1.1.3
 iptcinfo3==2.3.2
