@@ -1,11 +1,9 @@
+
 from flask import Flask, request, jsonify
 from PIL import Image
-from iptcinfo3 import IPTCInfo
 import piexif
 import io
 import base64
-import tempfile
-import os
 
 app = Flask(__name__)
 
@@ -15,51 +13,54 @@ def home():
 
 @app.route('/write-metadata', methods=['POST'])
 def write_metadata():
-    try:
-        data = request.json
-        base64_str = data.get("image_base64")
-        if not base64_str:
-            return jsonify({"error": "Missing image_base64"}), 400
+    data = request.json
+    base64_str = data.get("image_base64")
+    alt_text = data.get("alt_text")
+    title_tag = data.get("title_tag")
+    description = data.get("cms_description")
+    keywords = data.get("keywords", "")
+    byline = data.get("byline", "")
+    copyright_notice = data.get("copyright_notice", "")
+    file_name = data.get("filename", "emello-image.jpg")
+    associated_article = data.get("associated_article", "")
+    pin_description = data.get("pin_description", "")
 
-        # Standard metadata
-        alt_text = data.get("alt_text")
-        title_tag = data.get("title_tag")
-        description = data.get("cms_description")
+    if not base64_str:
+        return jsonify({"error": "Missing image_base64"}), 400
 
-        # Advanced IPTC fields
-        object_name = data.get("object_name")
-        keywords = data.get("keywords", "").split(",") if data.get("keywords") else []
-        subject_code = data.get("subject_code")
-        byline = data.get("byline")
-        copyright_notice = data.get("copyright_notice")
+    image_data = base64.b64decode(base64_str)
+    image = Image.open(io.BytesIO(image_data))
 
-        # Convert base64 to PIL image
-        image_data = base64.b64decode(base64_str)
-        image = Image.open(io.BytesIO(image_data))
+    exif_dict = {"0th": {}, "Exif": {}, "GPS": {}, "1st": {}, "thumbnail": None}
+    exif_dict["0th"][piexif.ImageIFD.ImageDescription] = description.encode('utf-8')
+    exif_dict["0th"][piexif.ImageIFD.XPTitle] = title_tag.encode('utf-16le')
+    exif_dict["0th"][piexif.ImageIFD.XPComment] = alt_text.encode('utf-16le')
+    exif_dict["0th"][piexif.ImageIFD.XPKeywords] = keywords.encode('utf-16le')
+    exif_dict["0th"][piexif.ImageIFD.Artist] = byline.encode('utf-8')
+    exif_dict["0th"][piexif.ImageIFD.Copyright] = copyright_notice.encode('utf-8')
 
-        # Save temporarily for IPTC writing
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
-            image.save(tmp.name, format="JPEG")
+    exif_bytes = piexif.dump(exif_dict)
 
-        # ✅ Inject IPTC metadata
-        info = IPTCInfo(tmp.name, force=True)
-        if object_name: info['object name'] = object_name
-        if keywords: info['keywords'] = [kw.strip() for kw in keywords]
-        if subject_code: info['subject reference'] = subject_code
-        if byline: info['by-line'] = byline
-        if copyright_notice: info['copyright notice'] = copyright_notice
-        info.save()
+    output = io.BytesIO()
+    image.save(output, format="JPEG", exif=exif_bytes)
+    encoded_img = base64.b64encode(output.getvalue()).decode("utf-8")
 
-        # ✅ Reload to memory
-        with open(tmp.name, "rb") as f:
-            final_base64 = base64.b64encode(f.read()).decode("utf-8")
+    jsonld = {
+        "@context": "https://schema.org",
+        "@type": "ImageObject",
+        "contentUrl": f"https://emello.com/images/{file_name}",
+        "name": title_tag,
+        "description": description,
+        "caption": pin_description,
+        "author": {
+            "@type": "Organization",
+            "name": "Emello"
+        },
+        "license": "https://emello.com/usage-guidelines",
+        "associatedArticle": associated_article
+    }
 
-        # Clean up
-        os.unlink(tmp.name)
-
-        return jsonify({
-            "image_base64": final_base64
-        })
-
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    return jsonify({
+        "image_base64": encoded_img,
+        "jsonld": jsonld
+    })
