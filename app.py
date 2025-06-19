@@ -1,36 +1,38 @@
-
 from flask import Flask, request, jsonify
 from PIL import Image
-from io import BytesIO
-import base64
 import piexif
+import io
+import base64
 
 app = Flask(__name__)
 
+@app.route('/')
+def home():
+    return "Image Metadata Service is live."
+
 @app.route('/write-metadata', methods=['POST'])
 def write_metadata():
-    data = request.get_json()
-    if not data or "image_base64" not in data or "metadata" not in data:
-        return jsonify({"error": "Missing image_base64 or metadata"}), 400
+    data = request.json
+    base64_str = data.get("image_base64")
+    alt_text = data.get("alt_text")
+    title_tag = data.get("title_tag")
+    description = data.get("cms_description")
 
-    try:
-        # Decode base64 image
-        image_data = base64.b64decode(data["image_base64"])
-        image = Image.open(BytesIO(image_data))
+    if not base64_str:
+        return jsonify({"error": "Missing image_base64"}), 400
 
-        # Build metadata (using EXIF UserComment)
-        exif_dict = {"0th": {}, "Exif": {}, "GPS": {}, "1st": {}, "thumbnail": None}
-        meta = data["metadata"]
-        user_comment = f"alt={meta.get('alt_text', '')}; title={meta.get('title_tag', '')}; desc={meta.get('cms_description', '')}"
-        exif_dict["Exif"][piexif.ExifIFD.UserComment] = piexif.helper.UserComment.dump(user_comment, encoding="unicode")
+    image_data = base64.b64decode(base64_str)
+    image = Image.open(io.BytesIO(image_data))
 
-        # Insert metadata
-        exif_bytes = piexif.dump(exif_dict)
-        output = BytesIO()
-        image.save(output, format="JPEG", exif=exif_bytes)
-        encoded_image = base64.b64encode(output.getvalue()).decode()
+    exif_dict = {"0th": {}, "Exif": {}, "GPS": {}, "1st": {}, "thumbnail": None}
+    exif_dict["0th"][piexif.ImageIFD.ImageDescription] = description.encode('utf-8')
+    exif_dict["0th"][piexif.ImageIFD.XPTitle] = title_tag.encode('utf-16le')
+    exif_dict["0th"][piexif.ImageIFD.XPComment] = alt_text.encode('utf-16le')
 
-        return jsonify({"image_base64": encoded_image})
+    exif_bytes = piexif.dump(exif_dict)
 
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    output = io.BytesIO()
+    image.save(output, format="JPEG", exif=exif_bytes)
+    encoded_img = base64.b64encode(output.getvalue()).decode("utf-8")
+
+    return jsonify({"image_base64": encoded_img})
