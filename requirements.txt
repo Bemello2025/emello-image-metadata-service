@@ -3,4 +3,4 @@ flask-cors==4.0.0
 pillow==10.3.0
 piexif==1.1.3
 gunicorn==21.2.0
-git+https://github.com/lorenwest/iptcinfo3-fork.git#egg=iptcinfo3-fork
+git+https://github.com/james-see/iptcinfo3
