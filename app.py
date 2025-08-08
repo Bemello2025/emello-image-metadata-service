@@ -66,6 +66,19 @@ def write_metadata():
         iptc_info["copyright notice"] = copyright_notice[:128]
         iptc_info["caption/abstract"] = caption_abstract[:200]
         iptc_info["special instructions"] = special_instructions[:256]
+        iptc_info["headline"] = iptc.get("Headline", "")[:256]
+        iptc_info["source"] = iptc.get("Source", "")[:32]
+        iptc_info["rights usage terms"] = iptc.get("RightsUsageTerms", "")[:256]
+        iptc_info["contact"] = iptc.get("Contact", "")[:64]
+        iptc_info["city"] = iptc.get("City", "")[:32]
+        iptc_info["country/primary location name"] = iptc.get("Country", "")[:64]
+        iptc_info["date created"] = iptc.get("DateCreated", "")[:10]
+        iptc_info["digital creation date"] = iptc.get("DigitalCreationDateTime", "")[:20]
+        iptc_info["scene identifier"] = iptc.get("Scene", "")[:32]
+        iptc_info["image region"] = iptc.get("ImageRegion", "")[:64]
+        iptc_info["subject reference"] = iptc.get("SubjectCode", "")[:32]
+        iptc_info["person shown"] = iptc.get("PersonInImage", "")[:64]
+        iptc_info["supplemental categories"] = iptc.get("ProductShown", [])[:10]
         iptc_info.save()
 
         # 🔁 Return base64 of updated image
