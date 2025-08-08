@@ -1,79 +1,60 @@
-from flask import Flask, request, jsonify
-from flask_cors import CORS
-from PIL import Image
-import piexif
-import base64
-import io
-import os
-from iptcinfo3 import IPTCInfo
+# top of file
+import tempfile, uuid
 
-app = Flask(__name__)
-CORS(app)
-
-@app.route("/")
-def home():
-    return "✅ Emello Image Metadata Service is live."
+def xp(txt):            # XP* EXIF helper
+    return txt.encode("utf-16le") + b"\x00\x00"
 
 @app.route("/write-metadata", methods=["POST"])
 def write_metadata():
     try:
-        data = request.json
+        data = request.json or {}
 
-        base64_str = data.get("image_base64")
+        base64_str = data.get("image_base64", "")
+        if base64_str.startswith("data:"):
+            base64_str = base64_str.split(",", 1)[1]
         if not base64_str:
             return jsonify({"error": "Missing image_base64"}), 400
 
-        # 🔁 Metadata with defaults
-        alt_text = data.get("alt_text", "")
-        title_tag = data.get("title_tag", "")
-        description = data.get("cms_description", "")
-        file_name = data.get("filename", "emello-image.jpg")
-        pin_description = data.get("pin_description", "")
-        associated_article = data.get("associated_article", "")
+        # ... same defaults block ...
 
-        # IPTC nested block
-        iptc = data.get("iptc_metadata", {})
-        object_name = iptc.get("ObjectName", title_tag)
-        iptc_keywords = iptc.get("Keywords", [])
-        caption_abstract = iptc.get("Caption-Abstract", description)
-        special_instructions = iptc.get("SpecialInstructions", "")
-        byline = iptc.get("Byline", "Emello Creative Studio")
-        copyright_notice = iptc.get("CopyrightNotice", "Emello Ltd. 2025. All rights reserved.")
-
-        # Decode image
+        # ── Decode image ──────────────────────────────────────────────
         image_data = base64.b64decode(base64_str)
         image = Image.open(io.BytesIO(image_data))
+        if image.mode in ("RGBA", "LA"):
+            image = image.convert("RGB")
 
-        # ▶️ Save EXIF metadata to file
-        exif_dict = {"0th": {}, "Exif": {}, "GPS": {}, "1st": {}, "thumbnail": None}
-        exif_dict["0th"][piexif.ImageIFD.ImageDescription] = description.encode("utf-8")
-        exif_dict["0th"][piexif.ImageIFD.XPTitle] = title_tag.encode("utf-16le")
-        exif_dict["0th"][piexif.ImageIFD.XPComment] = alt_text.encode("utf-16le")
-        exif_dict["0th"][piexif.ImageIFD.XPKeywords] = ", ".join(iptc_keywords).encode("utf-16le")
-        exif_dict["0th"][piexif.ImageIFD.Artist] = byline.encode("utf-8")
-        exif_dict["0th"][piexif.ImageIFD.Copyright] = copyright_notice.encode("utf-8")
-        exif_bytes = piexif.dump(exif_dict)
+        # ── EXIF ──────────────────────────────────────────────────────
+        exif = {"0th": {}, "Exif": {}, "GPS": {}, "1st": {}, "thumbnail": None}
+        exif["0th"][piexif.ImageIFD.ImageDescription] = description.encode("utf-8")
+        exif["0th"][piexif.ImageIFD.XPTitle]    = xp(title_tag)
+        exif["0th"][piexif.ImageIFD.XPComment]  = xp(alt_text)
+        exif["0th"][piexif.ImageIFD.XPKeywords] = xp(", ".join(iptc_keywords))
+        exif["0th"][piexif.ImageIFD.Artist]     = byline.encode("utf-8")
+        exif["0th"][piexif.ImageIFD.Copyright]  = copyright_notice.encode("utf-8")
+        exif_bytes = piexif.dump(exif)
 
-        # 🔄 Save to temp file
-        tmp_path = f"/tmp/{file_name}"
+        # ── Unique temp file ─────────────────────────────────────────
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg",
+                                         prefix=f"emello_{uuid.uuid4()}_") as tmp:
+            tmp_path = tmp.name
         image.save(tmp_path, "jpeg", exif=exif_bytes)
 
-        # ✍️ IPTC Write
+        # ── IPTC ──────────────────────────────────────────────────────
         iptc_info = IPTCInfo(tmp_path, force=True)
-        iptc_info["object name"] = object_name[:64]
-        iptc_info["keywords"] = iptc_keywords[:64]
-        iptc_info["by-line"] = byline[:32]
-        iptc_info["copyright notice"] = copyright_notice[:128]
-        iptc_info["caption/abstract"] = caption_abstract[:200]
-        iptc_info["special instructions"] = special_instructions[:256]
+        iptc_info["object name"]        = object_name.encode("utf-8")[:64]
+        iptc_info["keywords"]           = [kw.encode("utf-8") for kw in iptc_keywords[:64]]
+        iptc_info["by-line"]            = byline.encode("utf-8")[:32]
+        iptc_info["caption/abstract"]   = caption_abstract.encode("utf-8")[:200]
+        iptc_info["copyright notice"]   = copyright_notice.encode("utf-8")[:128]
+        iptc_info["special instructions"] = special_instructions.encode("utf-8")[:256]
+        # remove / map any non-standard keys here
         iptc_info.save()
 
-        # 🔁 Return base64 of updated image
         with open(tmp_path, "rb") as f:
             new_encoded = base64.b64encode(f.read()).decode("utf-8")
         os.remove(tmp_path)
 
-        # 🎯 JSON-LD Schema (optional downstream use)
+        # ── JSON-LD (unchanged, but wrap associatedArticle properly) ─
         jsonld = {
             "@context": "https://schema.org",
             "@type": "ImageObject",
@@ -81,9 +62,12 @@ def write_metadata():
             "name": title_tag,
             "description": description,
             "caption": pin_description,
-            "author": { "@type": "Organization", "name": "Emello" },
+            "author": {"@type": "Organization", "name": "Emello"},
             "license": "https://emello.com/usage-guidelines",
-            "associatedArticle": associated_article
+            "associatedArticle": (
+                {"@type": "Article", "url": associated_article}
+                if associated_article else None
+            )
         }
 
         return jsonify({
@@ -94,4 +78,7 @@ def write_metadata():
         })
 
     except Exception as e:
+        # guarantee temp file is removed
+        if 'tmp_path' in locals() and os.path.exists(tmp_path):
+            os.remove(tmp_path)
         return jsonify({"error": str(e)}), 500
