@@ -48,6 +48,21 @@ def write_metadata():
         iptc_info["copyright notice"]   = copyright_notice.encode("utf-8")[:128]
         iptc_info["special instructions"] = special_instructions.encode("utf-8")[:256]
         # remove / map any non-standard keys here
+        iptc_info["headline"] = iptc.get("Headline", "").encode("utf-8")[:256]
+iptc_info["credit"] = iptc.get("Credit", "").encode("utf-8")[:128]
+iptc_info["source"] = iptc.get("Source", "").encode("utf-8")[:128]
+iptc_info["custom1"] = iptc.get("RightsUsageTerms", "").encode("utf-8")[:256]
+iptc_info["contact"] = iptc.get("Contact", "").encode("utf-8")[:128]
+iptc_info["city"] = iptc.get("City", "").encode("utf-8")[:64]
+iptc_info["country/primary location name"] = iptc.get("Country", "").encode("utf-8")[:64]
+iptc_info["date created"] = iptc.get("DateCreated", "").encode("utf-8")[:10]
+iptc_info["digital creation date"] = iptc.get("DigitalCreationDateTime", "").encode("utf-8")[:20]
+iptc_info["scene identifier"] = iptc.get("Scene", "").encode("utf-8")[:128]
+iptc_info["subject reference"] = iptc.get("SubjectCode", "").encode("utf-8")[:128]
+iptc_info["writer/editor"] = iptc.get("PersonInImage", "").encode("utf-8")[:64]
+iptc_info["supplemental categories"] = [
+    item.encode("utf-8") for item in iptc.get("ProductShown", [])[:10]
+]
         iptc_info.save()
 
         with open(tmp_path, "rb") as f:
