@@ -68,7 +68,7 @@ def write_metadata():
         iptc_info["special instructions"] = special_instructions[:256]
         iptc_info["headline"] = iptc.get("Headline", "")[:256]
         iptc_info["source"] = iptc.get("Source", "")[:32]
-        iptc_info["rights usage terms"] = iptc.get("RightsUsageTerms", "")[:256]
+        iptc_info["custom1"] = iptc.get("RightsUsageTerms", "")[:256]
         iptc_info["contact"] = iptc.get("Contact", "")[:64]
         iptc_info["city"] = iptc.get("City", "")[:32]
         iptc_info["country/primary location name"] = iptc.get("Country", "")[:64]
